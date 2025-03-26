@@ -1,4 +1,4 @@
-package jsonrpc
+package client
 
 import (
 	"encoding/json"
@@ -40,9 +40,11 @@ func TestResponse(t *testing.T) {
 	t.Run("IsNotification", func(t *testing.T) {
 		t.Run("returns true for notifications (ID is nil)", func(t *testing.T) {
 			resp := Response{
-				ID:     nil,
-				Method: "test_notification",
-				Params: json.RawMessage(`["param1", "param2"]`),
+				Request: Request{
+					Id:     nil,
+					Method: "test_notification",
+					Params: json.RawMessage(`["param1", "param2"]`),
+				},
 			}
 			assert.True(t, resp.IsNotification())
 		})
@@ -50,8 +52,8 @@ func TestResponse(t *testing.T) {
 		t.Run("returns false for responses (ID is not nil)", func(t *testing.T) {
 			id := "123"
 			resp := Response{
-				ID:  &id,
-				Res: json.RawMessage(`{"result": "success"}`),
+				Request: Request{Id: &id},
+				Res:     json.RawMessage(`{"result": "success"}`),
 			}
 			assert.False(t, resp.IsNotification())
 		})
@@ -61,9 +63,11 @@ func TestResponse(t *testing.T) {
 		t.Run("returns true for server calls", func(t *testing.T) {
 			id := "123"
 			resp := Response{
-				ID:     &id,
-				Method: "test_method",
-				Params: json.RawMessage(`["param1", "param2"]`),
+				Request: Request{
+					Id:     &id,
+					Method: "test_method",
+					Params: json.RawMessage(`["param1", "param2"]`),
+				},
 			}
 			assert.True(t, resp.IsCall())
 		})
@@ -71,17 +75,19 @@ func TestResponse(t *testing.T) {
 		t.Run("returns false for responses", func(t *testing.T) {
 			id := "123"
 			resp := Response{
-				ID:  &id,
-				Res: json.RawMessage(`{"result": "success"}`),
+				Request: Request{Id: &id},
+				Res:     json.RawMessage(`{"result": "success"}`),
 			}
 			assert.False(t, resp.IsCall())
 		})
 
 		t.Run("returns false for notifications", func(t *testing.T) {
 			resp := Response{
-				ID:     nil,
-				Method: "test_notification",
-				Params: json.RawMessage(`["param1", "param2"]`),
+				Request: Request{
+					Id:     nil,
+					Method: "test_notification",
+					Params: json.RawMessage(`["param1", "param2"]`),
+				},
 			}
 			assert.False(t, resp.IsCall())
 		})
@@ -95,33 +101,41 @@ func TestResponse(t *testing.T) {
 				{
 					name: "missing Method",
 					response: Response{
-						ID:     &id,
-						Params: json.RawMessage(`["param1", "param2"]`),
+						Request: Request{
+							Id:     &id,
+							Params: json.RawMessage(`["param1", "param2"]`),
+						},
 					},
 				},
 				{
 					name: "missing Params",
 					response: Response{
-						ID:     &id,
-						Method: "test_method",
+						Request: Request{
+							Id:     &id,
+							Method: "test_method",
+						},
 					},
 				},
 				{
 					name: "contains Res field",
 					response: Response{
-						ID:     &id,
-						Method: "test_method",
-						Params: json.RawMessage(`["param1", "param2"]`),
-						Res:    json.RawMessage(`{"result": "success"}`),
+						Request: Request{
+							Id:     &id,
+							Method: "test_method",
+							Params: json.RawMessage(`["param1", "param2"]`),
+						},
+						Res: json.RawMessage(`{"result": "success"}`),
 					},
 				},
 				{
 					name: "contains Err field",
 					response: Response{
-						ID:     &id,
-						Method: "test_method",
-						Params: json.RawMessage(`["param1", "param2"]`),
-						Err:    "some error",
+						Request: Request{
+							Id:     &id,
+							Method: "test_method",
+							Params: json.RawMessage(`["param1", "param2"]`),
+						},
+						Err: "some error",
 					},
 				},
 			}

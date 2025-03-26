@@ -1,7 +1,8 @@
-package jsonrpc
+package server
 
 import (
 	"context"
+	"github.com/kazmanavt/jsonrpc/client"
 	"log/slog"
 	"net"
 	"sync"
@@ -9,11 +10,11 @@ import (
 
 // ServerNotificationHandler is a function type that handles JSON-RPC notifications.
 // It receives a connection and the raw notification parameters as a byte slice.
-type ServerNotificationHandler func(c *Connection, params []byte)
+type ServerNotificationHandler func(c *client.Connection, params []byte)
 
 // ServerCallHandler is a function type that handles JSON-RPC calls.
 // It receives a connection, a response object, and a channel to send the response back.
-type ServerCallHandler func(c *Connection, response *Response, respChan chan<- *Response)
+type ServerCallHandler func(c *client.Connection, id string, params []byte, respChan chan<- *client.Response)
 
 // NewServer creates a new JSON-RPC server that listens on the specified network and address.
 //
@@ -87,52 +88,6 @@ type ServerConnection struct {
 	//conns    []*Connection
 	ctx    context.Context
 	cancel context.CancelFunc
-}
-
-func serve(srv *ServerConnection) {
-	defer srv.cancel()
-	defer srv.log.Info("server stopped")
-LISTEN:
-	for {
-		conn, err := srv.listener.Accept()
-		if err != nil {
-			srv.log.Error("failed to accept connection", slog.String("error", err.Error()))
-			return
-		}
-		srv.log.Info("new connection accepted", slog.Any("remote", conn.RemoteAddr()))
-
-		c := NewConnection(conn, srv.log.With(slog.String("remote", conn.RemoteAddr().String())))
-		for method, handler := range srv.notificationHandlers {
-			if err := c.Handle(method, func(params []byte) { handler(c, params) }); err != nil {
-				c.log.Error("failed to set notification handler", slog.String("method", method), slog.String("error", err.Error()))
-				if err := c.Close(); err != nil {
-					c.log.Warn("failed to close connection", slog.String("error", err.Error()))
-				}
-				continue LISTEN
-			}
-		}
-		for method, handler := range srv.callHandlers {
-			if err := c.HandleCall(method, func(response *Response, respChan chan<- *Response) { handler(c, response, respChan) }); err != nil {
-				c.log.Error("failed to set call handler", slog.String("method", method), slog.String("error", err.Error()))
-				if err := c.Close(); err != nil {
-					c.log.Warn("failed to close connection", slog.String("error", err.Error()))
-				}
-				continue LISTEN
-			}
-		}
-
-		go func() {
-			select {
-			case <-srv.ctx.Done():
-				c.log.Info("server connection closed")
-			case <-c.ctx.Done():
-				c.log.Info("connection closed")
-			}
-			if err := c.Close(); err != nil {
-				c.log.Warn("failed to close connection", slog.String("error", err.Error()))
-			}
-		}()
-	}
 }
 
 func (s *ServerConnection) Close() error {

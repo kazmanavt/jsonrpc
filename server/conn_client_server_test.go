@@ -1,9 +1,10 @@
-package jsonrpc
+package server
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/kazmanavt/jsonrpc/client"
 	"log/slog"
 	"net"
 	"os"
@@ -21,7 +22,7 @@ func TestConnectionClientServer(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 
-	l := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	l := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	srv := NewServerConnection(listener, l)
 	defer func(srv *ServerConnection) {
 		err := srv.Close()
@@ -34,28 +35,28 @@ func TestConnectionClientServer(t *testing.T) {
 	t.Logf("Server listening on %s", serverAddr)
 
 	// Server connection handling
-	srv.HandleCall("echo", func(c *Connection, req *Response, resp chan<- *Response) {
-		resp <- &Response{
-			ID:  req.ID,
-			Res: req.Params,
+	srv.HandleCall("echo", func(c *client.Connection, id string, params []byte, resp chan<- *client.Response) {
+		resp <- &client.Response{
+			Request: client.Request{Id: &id},
+			Res:     params,
 		}
 	})
-	srv.HandleCall("slow", func(c *Connection, req *Response, resp chan<- *Response) {
+	srv.HandleCall("slow", func(c *client.Connection, id string, params []byte, resp chan<- *client.Response) {
 		time.Sleep(200 * time.Millisecond)
-		resp <- &Response{
-			ID:  req.ID,
-			Res: json.RawMessage(`"slow response"`),
+		resp <- &client.Response{
+			Request: client.Request{Id: &id},
+			Res:     json.RawMessage(`"slow response"`),
 		}
 	})
-	srv.HandleCall("error", func(c *Connection, req *Response, resp chan<- *Response) {
-		resp <- &Response{
-			ID:  req.ID,
-			Err: "test error",
+	srv.HandleCall("error", func(c *client.Connection, id string, params []byte, resp chan<- *client.Response) {
+		resp <- &client.Response{
+			Request: client.Request{Id: &id},
+			Err:     "test error",
 		}
 	})
 
 	notifications := []string{}
-	srv.Handle("notification", func(c *Connection, params []byte) {
+	srv.Handle("notification", func(c *client.Connection, params []byte) {
 		var data []string
 		err := json.Unmarshal(params, &data)
 		if err == nil && len(data) > 0 {
@@ -64,16 +65,16 @@ func TestConnectionClientServer(t *testing.T) {
 	})
 
 	i := 3
-	srv.HandleCall("subscribe", func(c *Connection, req *Response, resp chan<- *Response) {
+	srv.HandleCall("subscribe", func(c *client.Connection, id string, params []byte, resp chan<- *client.Response) {
 		go func(n int) {
 			for ii := range n {
 				time.Sleep(100 * time.Millisecond)
 				c.Notify(context.Background(), "subscription", fmt.Sprintf("subscription %d", n), strconv.Itoa(ii))
 			}
 		}(i)
-		resp <- &Response{
-			ID:  req.ID,
-			Res: json.RawMessage(fmt.Sprintf(`"subscription %d"`, i)),
+		resp <- &client.Response{
+			Request: client.Request{Id: &id},
+			Res:     json.RawMessage(fmt.Sprintf(`"subscription %d"`, i)),
 		}
 		i += 2
 	})
@@ -82,7 +83,7 @@ func TestConnectionClientServer(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	// Create client connection
-	clientConn, err := NewClient("tcp", serverAddr, l)
+	clientConn, err := client.NewClient("tcp", serverAddr, l)
 	require.NoError(t, err)
 	defer clientConn.Close()
 

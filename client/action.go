@@ -1,6 +1,9 @@
-package jsonrpc
+package client
 
-import "context"
+import (
+	"context"
+	"encoding/json"
+)
 
 type actionType int
 
@@ -15,12 +18,12 @@ const (
 
 type NotificationHandler func(params []byte)
 
-type CallHandler func(response *Response, respChan chan<- *Response)
+type CallHandler func(id string, params []byte, respChan chan<- *Response)
 
 type action struct {
 	action      actionType // 0 - call, 1 - set notify handler, 3 -send notification
 	method      string
-	params      []any
+	params      json.RawMessage
 	idChan      chan<- string       // id is channel to pass request id
 	respChan    chan<- *Response    // respChan is channel to pass results of method invocation
 	ctx         context.Context     // ctx is request context

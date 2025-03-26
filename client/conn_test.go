@@ -1,4 +1,4 @@
-package jsonrpc
+package client
 
 import (
 	"context"
@@ -147,19 +147,19 @@ func TestConnectionCall(t *testing.T) {
 	// Set up server-side handler for successful call
 	go func() {
 		decoder := json.NewDecoder(server)
-		var request request
-		err := decoder.Decode(&request)
+		var req Request
+		err := decoder.Decode(&req)
 		require.NoError(t, err)
 
 		// Verify request
-		assert.Equal(t, "test_method", request.Method)
-		assert.Equal(t, []any{"param1", "param2"}, request.Params)
-		assert.NotNil(t, request.ID)
+		assert.Equal(t, "test_method", req.Method)
+		assert.Equal(t, json.RawMessage(`["param1","param2"]`), req.Params)
+		assert.NotNil(t, req.Id)
 
 		// Send response
 		response := Response{
-			ID:  request.ID,
-			Res: json.RawMessage(`"success"`),
+			Request: Request{Id: req.Id},
+			Res:     json.RawMessage(`"success"`),
 		}
 		encoder := json.NewEncoder(server)
 		err = encoder.Encode(response)
@@ -193,14 +193,14 @@ func TestConnectionCallError(t *testing.T) {
 	// Set up server-side handler for error response
 	go func() {
 		decoder := json.NewDecoder(server)
-		var request request
-		err := decoder.Decode(&request)
+		var req Request
+		err := decoder.Decode(&req)
 		require.NoError(t, err)
 
 		// Send error response
 		response := Response{
-			ID:  request.ID,
-			Err: "test error",
+			Request: Request{Id: req.Id},
+			Err:     "test error",
 		}
 		encoder := json.NewEncoder(server)
 		err = encoder.Encode(response)
@@ -235,7 +235,7 @@ func TestConnectionCallTimeout(t *testing.T) {
 	// Set up server-side handler that never responds
 	go func() {
 		decoder := json.NewDecoder(server)
-		var request request
+		var request Request
 		_ = decoder.Decode(&request)
 		// Don't respond, let the context timeout
 	}()
@@ -268,14 +268,14 @@ func TestConnectionNotify(t *testing.T) {
 	// Set up server-side handler
 	go func() {
 		decoder := json.NewDecoder(server)
-		var request request
+		var request Request
 		err := decoder.Decode(&request)
 		require.NoError(t, err)
 
 		// Verify notification
 		assert.Equal(t, "test_notification", request.Method)
-		assert.Equal(t, []any{"event_data"}, request.Params)
-		assert.Nil(t, request.ID)
+		assert.Equal(t, json.RawMessage(`["event_data"]`), request.Params)
+		assert.Nil(t, request.Id)
 	}()
 
 	// Send notification
@@ -312,8 +312,10 @@ func TestConnectionHandle(t *testing.T) {
 	go func() {
 		time.Sleep(100 * time.Millisecond) // Small delay to ensure handler is registered
 		notification := Response{
-			Method: "test_event",
-			Params: json.RawMessage(`["notification_data"]`),
+			Request: Request{
+				Method: "test_event",
+				Params: json.RawMessage(`["notification_data"]`),
+			},
 		}
 		encoder := json.NewEncoder(server)
 		err := encoder.Encode(notification)
@@ -345,11 +347,11 @@ func TestConnectionHandleCall(t *testing.T) {
 	defer conn.Close()
 
 	// Setup call handler
-	err = conn.HandleCall("echo", func(req *Response, resp chan<- *Response) {
+	err = conn.HandleCall("echo", func(id string, params []byte, resp chan<- *Response) {
 		// Echo back the request ID with a result
 		resp <- &Response{
-			ID:  req.ID,
-			Res: json.RawMessage(`"echoed"`),
+			Request: Request{Id: &id},
+			Res:     json.RawMessage(`"echoed"`),
 		}
 	})
 	require.NoError(t, err)
@@ -359,9 +361,11 @@ func TestConnectionHandleCall(t *testing.T) {
 		time.Sleep(100 * time.Millisecond) // Small delay to ensure handler is registered
 		id := "server_call_123"
 		call := Response{
-			ID:     &id,
-			Method: "echo",
-			Params: json.RawMessage(`["test"]`),
+			Request: Request{
+				Id:     &id,
+				Method: "echo",
+				Params: json.RawMessage(`["test"]`),
+			},
 		}
 		encoder := json.NewEncoder(server)
 		err := encoder.Encode(call)
@@ -374,7 +378,7 @@ func TestConnectionHandleCall(t *testing.T) {
 		require.NoError(t, err)
 
 		// Verify response
-		assert.Equal(t, id, *response.ID)
+		assert.Equal(t, id, *response.Id)
 		assert.Equal(t, json.RawMessage(`"echoed"`), response.Res)
 	}()
 
@@ -400,7 +404,7 @@ func TestConnectionSendAndDrop(t *testing.T) {
 	// Capture request without responding
 	go func() {
 		decoder := json.NewDecoder(server)
-		var request request
+		var request Request
 		_ = decoder.Decode(&request)
 		// Don't respond, let the test drop the request
 	}()
